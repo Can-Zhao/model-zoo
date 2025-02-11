@@ -9,6 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import shutil
 import sys
@@ -60,7 +61,7 @@ TEST_CASE_INFER_MULTI_STR_PROMPT = [
 TEST_CASE_INFER_MULTI_NEW_STR_PROMPT = [
     {
         "bundle_root": "models/vista3d",
-        "input_dict": {"label_prompt": ["new class 1", "new class 2", "new class 3"]},
+        "input_dict": {"label_prompt": ["new class 1"], "points": [[123, 212, 151]], "point_labels": [1]},
         "patch_size": [32, 32, 32],
         "checkpointloader#_disabled_": True,  # do not load weights"
         "initialize": ["$monai.utils.set_determinism(seed=123)"],
@@ -222,6 +223,26 @@ TEST_CASE_ERROR_PROMPTS = [
             "error": "Label prompt can only be a single object if provided with point prompts.",
         }
     ],
+    [
+        {
+            "bundle_root": "models/vista3d",
+            "input_dict": {"label_prompt": [16, 25, 26]},
+            "patch_size": [32, 32, 32],
+            "checkpointloader#_disabled_": True,  # do not load weights"
+            "initialize": ["$monai.utils.set_determinism(seed=123)"],
+            "error": "Undefined label prompt detected. Provide point prompts for zero-shot.",
+        }
+    ],
+    [
+        {
+            "bundle_root": "models/vista3d",
+            "input_dict": {"label_prompt": [136]},
+            "patch_size": [32, 32, 32],
+            "checkpointloader#_disabled_": True,  # do not load weights"
+            "initialize": ["$monai.utils.set_determinism(seed=123)"],
+            "error": "Undefined label prompt detected. Provide point prompts for zero-shot.",
+        }
+    ],
 ]
 
 
@@ -312,7 +333,6 @@ class TestVista3d(unittest.TestCase):
             os.path.join(bundle_root, "configs/train.json"),
             os.path.join(bundle_root, "configs/train_continual.json"),
             os.path.join(bundle_root, "configs/evaluate.json"),
-            os.path.join(bundle_root, "configs/data.yaml"),
         ]
         trainer = ConfigWorkflow(
             workflow_type="train",
@@ -440,6 +460,15 @@ class TestVista3d(unittest.TestCase):
         runtime_error = context.exception
         original_exception = runtime_error.__cause__
         self.assertEqual(str(original_exception), override["error"])
+
+    @parameterized.expand([TEST_CASE_INFER])
+    def test_labels_dict(self, override):
+        bundle_root = override["bundle_root"]
+        label_dict_file = os.path.join(bundle_root, "docs/labels.json")
+        if not os.path.isfile(label_dict_file):
+            raise ValueError(f"labels.json not found in {bundle_root}")
+        with open(label_dict_file) as f:
+            _ = json.load(f)
 
 
 if __name__ == "__main__":
