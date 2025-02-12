@@ -244,21 +244,39 @@ def ldm_conditional_sample_one_image(
 
         # synthesize latents
         noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps, input_img_size = torch.prod(torch.tensor(latent_shape[-3:])) )
-        for t in tqdm(noise_scheduler.timesteps, ncols=110):
-            # Get controlnet output
-            down_block_res_samples, mid_block_res_sample = controlnet(
-                x=latents, timesteps=torch.Tensor((t,)).to(device), controlnet_cond=controlnet_cond_vis, class_labels = modality_tensor,
-            )
-            latent_model_input = latents
-            noise_pred = diffusion_unet(
-                x=latent_model_input,
-                timesteps=torch.Tensor((t,)).to(device),
-                spacing_tensor=spacing_tensor,
-                class_labels = modality_tensor,
-                down_block_additional_residuals=down_block_res_samples,
-                mid_block_additional_residual=mid_block_res_sample,
-            )
-            latents, _ = noise_scheduler.step(noise_pred, t, latents)
+        # synthesize latents
+        guidance_scale = 0 # API for classifier-free guidence, not used in this version
+        all_next_timesteps = torch.cat((noise_scheduler.timesteps[1:], torch.tensor([0], dtype=noise_scheduler.timesteps.dtype)))
+        for t, next_t in tqdm(zip(noise_scheduler.timesteps, all_next_timesteps), total=min(len(noise_scheduler.timesteps), len(all_next_timesteps))):
+            timesteps = torch.Tensor((t,)).to(device)            
+            if guidance_scale == 0:
+                down_block_res_samples, mid_block_res_sample = controlnet(
+                    x=latents, timesteps=timesteps, controlnet_cond=controlnet_cond_vis,
+                    class_labels = modality_tensor,
+                )
+                predicted_velocity = diffusion_unet(
+                    x=latents,
+                    timesteps=timesteps,
+                    spacing_tensor=spacing_tensor,
+                    class_labels = modality_tensor,
+                    down_block_additional_residuals=down_block_res_samples,
+                    mid_block_additional_residual=mid_block_res_sample,
+                ) 
+            else:
+                down_block_res_samples, mid_block_res_sample = controlnet(
+                    x=torch.cat([latents] * 2), timesteps=torch.cat([timesteps] * 2), controlnet_cond=torch.cat([controlnet_cond_vis] * 2),
+                    class_labels = torch.cat([modality_tensor, torch.zeros_like(modality_tensor)]),
+                )
+                model_t, model_uncond = diffusion_unet(
+                    x=torch.cat([latents] * 2),
+                    timesteps=timesteps,
+                    spacing_tensor=torch.cat([timesteps] * 2),
+                    class_labels = torch.cat([modality_tensor, torch.zeros_like(modality_tensor)]),
+                    down_block_additional_residuals=down_block_res_samples,
+                    mid_block_additional_residual=mid_block_res_sample,
+                ).chunk(2)
+                predicted_velocity = model_uncond + guidance_scale * (model_t - model_uncond)
+            latents, _ = noise_scheduler.step(predicted_velocity, t, latents, next_timestep= next_t)
         end_time = time.time()
         logging.info(f"---- Latent features generation time: {end_time - start_time} seconds ----")
         del noise_pred
