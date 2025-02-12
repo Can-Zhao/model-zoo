@@ -12,7 +12,6 @@ def timestep_transform(
     t, input_img_size, base_img_size=32 * 32 * 32, scale=1.0, num_train_timesteps=1000, spatial_dim=3
 ):
     t = t / num_train_timesteps
-    resolution = input_img_size
     ratio_space = (input_img_size / base_img_size).pow(1.0 / spatial_dim)
 
     ratio = ratio_space * scale

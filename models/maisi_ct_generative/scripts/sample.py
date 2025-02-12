@@ -11,7 +11,6 @@
 
 import json
 import logging
-import math
 import os
 import random
 import time
@@ -20,7 +19,6 @@ from datetime import datetime
 import monai
 import torch
 from monai.data import MetaTensor
-from monai.inferers import sliding_window_inference
 from monai.inferers.inferer import DiffusionInferer, SlidingWindowInferer
 from monai.transforms import Compose, SaveImage
 from monai.utils import set_determinism
