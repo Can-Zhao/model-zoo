@@ -263,10 +263,7 @@ def ldm_conditional_sample_one_image(
             timesteps = torch.Tensor((t,)).to(device)
             if guidance_scale == 0:
                 down_block_res_samples, mid_block_res_sample = controlnet(
-                    x=latents,
-                    timesteps=timesteps,
-                    controlnet_cond=controlnet_cond_vis,
-                    class_labels=modality_tensor,
+                    x=latents, timesteps=timesteps, controlnet_cond=controlnet_cond_vis, class_labels=modality_tensor
                 )
                 predicted_velocity = diffusion_unet(
                     x=latents,

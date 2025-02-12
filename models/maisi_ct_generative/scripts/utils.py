@@ -661,6 +661,7 @@ class MapLabelValue:
         out, *_ = convert_to_dst_type(src=out_t, dst=img, dtype=self.dtype)
         return out
 
+
 def dynamic_infer(inferer, model, images):
     """
     Perform dynamic inference using a model and an inferer, typically a monai SlidingWindowInferer.

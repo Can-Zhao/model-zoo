@@ -9,12 +9,7 @@ from torch.distributions import LogisticNormal
 
 
 def timestep_transform(
-    t,
-    input_img_size,
-    base_img_size=32 * 32 * 32,
-    scale=1.0,
-    num_train_timesteps=1000,
-    spatial_dim=3,
+    t, input_img_size, base_img_size=32 * 32 * 32, scale=1.0, num_train_timesteps=1000, spatial_dim=3
 ):
     t = t / num_train_timesteps
     resolution = input_img_size
@@ -60,10 +55,7 @@ class RFlowScheduler(Scheduler):
         self.steps_offset = steps_offset
 
     def add_noise(
-        self,
-        original_samples: torch.FloatTensor,
-        noise: torch.FloatTensor,
-        timesteps: torch.IntTensor,
+        self, original_samples: torch.FloatTensor, noise: torch.FloatTensor, timesteps: torch.IntTensor
     ) -> torch.FloatTensor:
         """
         compatible with diffusers add_noise()
