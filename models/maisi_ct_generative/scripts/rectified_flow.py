@@ -1,8 +1,9 @@
+from typing import Any
+
 import numpy as np
 import torch
-from torch.distributions import LogisticNormal
 from monai.networks.schedulers import Scheduler
-from typing import Any
+from torch.distributions import LogisticNormal
 
 # code modified from https://github.com/hpcaitech/Open-Sora/blob/main/opensora/schedulers/rf/rectified_flow.py
 
@@ -10,14 +11,14 @@ from typing import Any
 def timestep_transform(
     t,
     input_img_size,
-    base_img_size=32*32*32,
+    base_img_size=32 * 32 * 32,
     scale=1.0,
     num_train_timesteps=1000,
-    spatial_dim = 3,
+    spatial_dim=3,
 ):
     t = t / num_train_timesteps
     resolution = input_img_size
-    ratio_space = (input_img_size / base_img_size).pow(1./spatial_dim)
+    ratio_space = (input_img_size / base_img_size).pow(1.0 / spatial_dim)
 
     ratio = ratio_space * scale
     new_t = ratio * t / (1 + (ratio - 1) * t)
@@ -58,7 +59,6 @@ class RFlowScheduler(Scheduler):
         self.transform_scale = transform_scale
         self.steps_offset = steps_offset
 
-
     def add_noise(
         self,
         original_samples: torch.FloatTensor,
@@ -78,7 +78,13 @@ class RFlowScheduler(Scheduler):
 
         return timepoints * original_samples + (1 - timepoints) * noise
 
-    def set_timesteps(self, num_inference_steps: int, device: str | torch.device | None = None, input_img_size: int |None = None, base_img_size: int = 32*32*32) -> None:
+    def set_timesteps(
+        self,
+        num_inference_steps: int,
+        device: str | torch.device | None = None,
+        input_img_size: int | None = None,
+        base_img_size: int = 32 * 32 * 32,
+    ) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
@@ -97,11 +103,21 @@ class RFlowScheduler(Scheduler):
 
         self.num_inference_steps = num_inference_steps
         # prepare timesteps
-        timesteps = [(1.0 - i / self.num_inference_steps) * self.num_train_timesteps for i in range(self.num_inference_steps)]
+        timesteps = [
+            (1.0 - i / self.num_inference_steps) * self.num_train_timesteps for i in range(self.num_inference_steps)
+        ]
         if self.use_discrete_timesteps:
             timesteps = [int(round(t)) for t in timesteps]
         if self.use_timestep_transform:
-            timesteps = [timestep_transform(t, input_img_size=input_img_size, base_img_size=base_img_size, num_train_timesteps=self.num_train_timesteps) for t in timesteps]
+            timesteps = [
+                timestep_transform(
+                    t,
+                    input_img_size=input_img_size,
+                    base_img_size=base_img_size,
+                    num_train_timesteps=self.num_train_timesteps,
+                )
+                for t in timesteps
+            ]
         timesteps = np.array(timesteps).astype(np.float16)
         if self.use_discrete_timesteps:
             timesteps = timesteps.astype(np.int64)
@@ -120,12 +136,19 @@ class RFlowScheduler(Scheduler):
 
         if self.use_timestep_transform:
             input_img_size = torch.prod(torch.tensor(x_start.shape[-3:]))
-            base_img_size = 32*32*32
-            t = timestep_transform(t, input_img_size=input_img_size, base_img_size=base_img_size, num_train_timesteps=self.num_train_timesteps)
+            base_img_size = 32 * 32 * 32
+            t = timestep_transform(
+                t,
+                input_img_size=input_img_size,
+                base_img_size=base_img_size,
+                num_train_timesteps=self.num_train_timesteps,
+            )
 
         return t
 
-    def step(self, model_output: torch.Tensor, timestep: int, sample: torch.Tensor, next_timestep = None) -> tuple[torch.Tensor, Any]:
+    def step(
+        self, model_output: torch.Tensor, timestep: int, sample: torch.Tensor, next_timestep=None
+    ) -> tuple[torch.Tensor, Any]:
         """
         Predict the sample at the previous timestep. Core function to propagate the diffusion
         process from the learned model outputs.

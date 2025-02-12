@@ -21,8 +21,7 @@ import monai
 import torch
 from monai.data import MetaTensor
 from monai.inferers import sliding_window_inference
-from monai.inferers.inferer import SlidingWindowInferer
-from monai.inferers.inferer import DiffusionInferer
+from monai.inferers.inferer import DiffusionInferer, SlidingWindowInferer
 from monai.transforms import Compose, SaveImage
 from monai.utils import set_determinism
 from tqdm import tqdm
@@ -30,24 +29,30 @@ from tqdm import tqdm
 from .augmentation import augmentation
 from .find_masks import find_masks
 from .quality_check import is_outlier
-from .utils import binarize_labels, general_mask_generation_post_process, get_body_region_index_from_mask, remap_labels, dynamic_infer
-
+from .utils import (
+    binarize_labels,
+    dynamic_infer,
+    general_mask_generation_post_process,
+    get_body_region_index_from_mask,
+    remap_labels,
+)
 
 modality_mapping = {
-        "unknown":0,
-        "ct":1,
-        "ct_wo_contrast":2,
-        "ct_contrast":3,
-        "mri":8,
-        "mri_t1":9,
-        "mri_t2":10,
-        "mri_flair":11,
-        "mri_pd":12,
-        "mri_dwi":13,
-        "mri_adc":14,
-        "mri_ssfp":15,
-        "mri_mra":16
-} # current version only support "ct"
+    "unknown": 0,
+    "ct": 1,
+    "ct_wo_contrast": 2,
+    "ct_contrast": 3,
+    "mri": 8,
+    "mri_t1": 9,
+    "mri_t2": 10,
+    "mri_flair": 11,
+    "mri_pd": 12,
+    "mri_dwi": 13,
+    "mri_adc": 14,
+    "mri_ssfp": 15,
+    "mri_mra": 16,
+}  # current version only support "ct"
+
 
 class ReconModel(torch.nn.Module):
     """
@@ -141,13 +146,13 @@ def ldm_conditional_sample_one_mask(
         )
         # decode latents to synthesized masks
         inferer = SlidingWindowInferer(
-            roi_size= autoencoder_sliding_window_infer_size,
+            roi_size=autoencoder_sliding_window_infer_size,
             sw_batch_size=1,
             progress=True,
             mode="gaussian",
             overlap=autoencoder_sliding_window_infer_overlap,
             device=torch.device("cpu"),
-            sw_device=device
+            sw_device=device,
         )
         synthetic_mask = dynamic_infer(inferer, recon_model, latents)
         synthetic_mask = torch.softmax(synthetic_mask, dim=1)
@@ -243,40 +248,51 @@ def ldm_conditional_sample_one_image(
         latents = initialize_noise_latents(latent_shape, device) * noise_factor
 
         # synthesize latents
-        noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps, input_img_size = torch.prod(torch.tensor(latent_shape[-3:])) )
+        noise_scheduler.set_timesteps(
+            num_inference_steps=num_inference_steps, input_img_size=torch.prod(torch.tensor(latent_shape[-3:]))
+        )
         # synthesize latents
-        guidance_scale = 0 # API for classifier-free guidence, not used in this version
-        all_next_timesteps = torch.cat((noise_scheduler.timesteps[1:], torch.tensor([0], dtype=noise_scheduler.timesteps.dtype)))
-        for t, next_t in tqdm(zip(noise_scheduler.timesteps, all_next_timesteps), total=min(len(noise_scheduler.timesteps), len(all_next_timesteps))):
+        guidance_scale = 0  # API for classifier-free guidence, not used in this version
+        all_next_timesteps = torch.cat(
+            (noise_scheduler.timesteps[1:], torch.tensor([0], dtype=noise_scheduler.timesteps.dtype))
+        )
+        for t, next_t in tqdm(
+            zip(noise_scheduler.timesteps, all_next_timesteps),
+            total=min(len(noise_scheduler.timesteps), len(all_next_timesteps)),
+        ):
             timesteps = torch.Tensor((t,)).to(device)
             if guidance_scale == 0:
                 down_block_res_samples, mid_block_res_sample = controlnet(
-                    x=latents, timesteps=timesteps, controlnet_cond=controlnet_cond_vis,
-                    class_labels = modality_tensor,
+                    x=latents,
+                    timesteps=timesteps,
+                    controlnet_cond=controlnet_cond_vis,
+                    class_labels=modality_tensor,
                 )
                 predicted_velocity = diffusion_unet(
                     x=latents,
                     timesteps=timesteps,
                     spacing_tensor=spacing_tensor,
-                    class_labels = modality_tensor,
+                    class_labels=modality_tensor,
                     down_block_additional_residuals=down_block_res_samples,
                     mid_block_additional_residual=mid_block_res_sample,
                 )
             else:
                 down_block_res_samples, mid_block_res_sample = controlnet(
-                    x=torch.cat([latents] * 2), timesteps=torch.cat([timesteps] * 2), controlnet_cond=torch.cat([controlnet_cond_vis] * 2),
-                    class_labels = torch.cat([modality_tensor, torch.zeros_like(modality_tensor)]),
+                    x=torch.cat([latents] * 2),
+                    timesteps=torch.cat([timesteps] * 2),
+                    controlnet_cond=torch.cat([controlnet_cond_vis] * 2),
+                    class_labels=torch.cat([modality_tensor, torch.zeros_like(modality_tensor)]),
                 )
                 model_t, model_uncond = diffusion_unet(
                     x=torch.cat([latents] * 2),
                     timesteps=timesteps,
                     spacing_tensor=torch.cat([timesteps] * 2),
-                    class_labels = torch.cat([modality_tensor, torch.zeros_like(modality_tensor)]),
+                    class_labels=torch.cat([modality_tensor, torch.zeros_like(modality_tensor)]),
                     down_block_additional_residuals=down_block_res_samples,
                     mid_block_additional_residual=mid_block_res_sample,
                 ).chunk(2)
                 predicted_velocity = model_uncond + guidance_scale * (model_t - model_uncond)
-            latents, _ = noise_scheduler.step(predicted_velocity, t, latents, next_timestep= next_t)
+            latents, _ = noise_scheduler.step(predicted_velocity, t, latents, next_timestep=next_t)
         end_time = time.time()
         logging.info(f"---- Latent features generation time: {end_time - start_time} seconds ----")
         del predicted_velocity
@@ -285,13 +301,13 @@ def ldm_conditional_sample_one_image(
         # decode latents to synthesized images
         logging.info("---- Start decoding latent features into images... ----")
         inferer = SlidingWindowInferer(
-            roi_size= autoencoder_sliding_window_infer_size,
+            roi_size=autoencoder_sliding_window_infer_size,
             sw_batch_size=1,
             progress=True,
             mode="gaussian",
             overlap=autoencoder_sliding_window_infer_overlap,
             device=torch.device("cpu"),
-            sw_device=device
+            sw_device=device,
         )
         start_time = time.time()
         synthetic_images = dynamic_infer(inferer, recon_model, latents)
@@ -692,7 +708,7 @@ class LDMSampler:
             # generate image/label pairs
             to_generate = True
             try_time = 0
-            modality_tensor = torch.ones_like(spacing_tensor[:,0]).long()*self.modality_int
+            modality_tensor = torch.ones_like(spacing_tensor[:, 0]).long() * self.modality_int
             while to_generate:
                 synthetic_images, synthetic_labels = self.sample_one_pair(
                     combine_label_or, modality_tensor, spacing_tensor
@@ -756,9 +772,7 @@ class LDMSampler:
             selected_mask_files.append({"mask_file": mask_file, "if_aug": True})
         return selected_mask_files
 
-    def sample_one_pair(
-        self, combine_label_or_aug, modality_tensor, spacing_tensor
-    ):
+    def sample_one_pair(self, combine_label_or_aug, modality_tensor, spacing_tensor):
         """
         Generate a single pair of synthetic image and mask.
 
@@ -780,7 +794,7 @@ class LDMSampler:
             scale_factor=self.scale_factor,
             device=self.device,
             combine_label_or=combine_label_or_aug,
-            modality_tensor = modality_tensor,
+            modality_tensor=modality_tensor,
             spacing_tensor=spacing_tensor,
             latent_shape=self.latent_shape,
             output_size=self.output_size,
