@@ -279,7 +279,7 @@ def ldm_conditional_sample_one_image(
             latents, _ = noise_scheduler.step(predicted_velocity, t, latents, next_timestep= next_t)
         end_time = time.time()
         logging.info(f"---- Latent features generation time: {end_time - start_time} seconds ----")
-        del noise_pred
+        del predicted_velocity
         torch.cuda.empty_cache()
 
         # decode latents to synthesized images
