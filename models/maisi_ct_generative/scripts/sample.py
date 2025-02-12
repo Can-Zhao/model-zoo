@@ -221,7 +221,7 @@ def ldm_conditional_sample_one_image(
 
     recon_model = ReconModel(autoencoder=autoencoder, scale_factor=scale_factor).to(device)
 
-    with torch.no_grad(), torch.amp.autocast("cuda"):
+    with torch.no_grad(), torch.amp.autocast("cuda", enabled=True):
         logging.info("---- Start generating latent features... ----")
         start_time = time.time()
         # generate segmentation mask
@@ -581,7 +581,7 @@ class LDMSampler:
         self.autoencoder_sliding_window_infer_overlap = autoencoder_sliding_window_infer_overlap
 
         # quality check args
-        self.max_try_time = 5  # if not pass quality check, will try self.max_try_time times
+        self.max_try_time = 1  # if not pass quality check, will try self.max_try_time times
         with open(real_img_median_statistics, "r") as json_file:
             self.median_statistics = json.load(json_file)
         self.label_int_dict = {
