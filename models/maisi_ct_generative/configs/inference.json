@@ -11,7 +11,7 @@
     "device": "$torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')",
     "trained_autoencoder_path": "$@model_dir + '/autoencoder_epoch273.pt'",
     "trained_diffusion_path": "$@model_dir + '/diff_unet_ckpt_epoch19200.pt'",
-    "trained_controlnet_path": "$@model_dir + '/controlnet_current.pt'",
+    "trained_controlnet_path": "$@model_dir + '/controlnet_epoch87.pt'",
     "trained_mask_generation_autoencoder_path": "$@model_dir + '/mask_generation_autoencoder.pt'",
     "trained_mask_generation_diffusion_path": "$@model_dir + '/mask_generation_diffusion_unet.pt'",
     "all_mask_files_base_dir": "$@bundle_root + '/datasets/all_masks_flexible_size_and_spacing_3000'",
@@ -64,11 +64,11 @@
         64
     ],
     "autoencoder_sliding_window_infer_size": [
-        96,
-        96,
-        96
+        80,
+        80,
+        80
     ],
-    "autoencoder_sliding_window_infer_overlap": 0.3333,
+    "autoencoder_sliding_window_infer_overlap": 0.25,
     "autoencoder_def": {
         "_target_": "monai.apps.generation.maisi.networks.autoencoderkl_maisi.AutoencoderKlMaisi",
         "spatial_dims": "@spatial_dims",
