@@ -38,7 +38,7 @@ modality_mapping = {
         "ct":1,
         "ct_wo_contrast":2,
         "ct_contrast":3,
-        "mri":8, 
+        "mri":8,
         "mri_t1":9,
         "mri_t2":10,
         "mri_flair":11,
@@ -248,7 +248,7 @@ def ldm_conditional_sample_one_image(
         guidance_scale = 0 # API for classifier-free guidence, not used in this version
         all_next_timesteps = torch.cat((noise_scheduler.timesteps[1:], torch.tensor([0], dtype=noise_scheduler.timesteps.dtype)))
         for t, next_t in tqdm(zip(noise_scheduler.timesteps, all_next_timesteps), total=min(len(noise_scheduler.timesteps), len(all_next_timesteps))):
-            timesteps = torch.Tensor((t,)).to(device)            
+            timesteps = torch.Tensor((t,)).to(device)
             if guidance_scale == 0:
                 down_block_res_samples, mid_block_res_sample = controlnet(
                     x=latents, timesteps=timesteps, controlnet_cond=controlnet_cond_vis,
@@ -261,7 +261,7 @@ def ldm_conditional_sample_one_image(
                     class_labels = modality_tensor,
                     down_block_additional_residuals=down_block_res_samples,
                     mid_block_additional_residual=mid_block_res_sample,
-                ) 
+                )
             else:
                 down_block_res_samples, mid_block_res_sample = controlnet(
                     x=torch.cat([latents] * 2), timesteps=torch.cat([timesteps] * 2), controlnet_cond=torch.cat([controlnet_cond_vis] * 2),

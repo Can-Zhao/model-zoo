@@ -95,16 +95,16 @@ class RFlowScheduler(Scheduler):
                 f" maximal {self.num_train_timesteps} timesteps."
             )
 
-        self.num_inference_steps = num_inference_steps        
+        self.num_inference_steps = num_inference_steps
         # prepare timesteps
-        timesteps = [(1.0 - i / self.num_inference_steps) * self.num_train_timesteps for i in range(self.num_inference_steps)] 
+        timesteps = [(1.0 - i / self.num_inference_steps) * self.num_train_timesteps for i in range(self.num_inference_steps)]
         if self.use_discrete_timesteps:
             timesteps = [int(round(t)) for t in timesteps]
         if self.use_timestep_transform:
             timesteps = [timestep_transform(t, input_img_size=input_img_size, base_img_size=base_img_size, num_train_timesteps=self.num_train_timesteps) for t in timesteps]
-        timesteps = np.array(timesteps).astype(np.float16)    
+        timesteps = np.array(timesteps).astype(np.float16)
         if self.use_discrete_timesteps:
-            timesteps = timesteps.astype(np.int64)       
+            timesteps = timesteps.astype(np.int64)
         self.timesteps = torch.from_numpy(timesteps).to(device)
         self.timesteps += self.steps_offset
         print(self.timesteps)
@@ -119,12 +119,12 @@ class RFlowScheduler(Scheduler):
             t = t.long()
 
         if self.use_timestep_transform:
-            input_img_size = torch.prod(torch.tensor(x_start.shape[-3:])) 
+            input_img_size = torch.prod(torch.tensor(x_start.shape[-3:]))
             base_img_size = 32*32*32
             t = timestep_transform(t, input_img_size=input_img_size, base_img_size=base_img_size, num_train_timesteps=self.num_train_timesteps)
-        
+
         return t
-        
+
     def step(self, model_output: torch.Tensor, timestep: int, sample: torch.Tensor, next_timestep = None) -> tuple[torch.Tensor, Any]:
         """
         Predict the sample at the previous timestep. Core function to propagate the diffusion
