@@ -21,6 +21,7 @@ import monai
 import torch
 from monai.data import MetaTensor
 from monai.inferers import sliding_window_inference
+from monai.inferers.inferer import SlidingWindowInferer
 from monai.inferers.inferer import DiffusionInferer
 from monai.transforms import Compose, SaveImage
 from monai.utils import set_determinism
@@ -29,8 +30,24 @@ from tqdm import tqdm
 from .augmentation import augmentation
 from .find_masks import find_masks
 from .quality_check import is_outlier
-from .utils import binarize_labels, general_mask_generation_post_process, get_body_region_index_from_mask, remap_labels
+from .utils import binarize_labels, general_mask_generation_post_process, get_body_region_index_from_mask, remap_labels, dynamic_infer
 
+
+modality_mapping = {
+        "unknown":0,
+        "ct":1,
+        "ct_wo_contrast":2,
+        "ct_contrast":3,
+        "mri":8, 
+        "mri_t1":9,
+        "mri_t2":10,
+        "mri_flair":11,
+        "mri_pd":12,
+        "mri_dwi":13,
+        "mri_adc":14,
+        "mri_ssfp":15,
+        "mri_mra":16
+} # current version only support "ct"
 
 class ReconModel(torch.nn.Module):
     """
@@ -123,28 +140,16 @@ def ldm_conditional_sample_one_mask(
             conditioning=anatomy_size.to(device),
         )
         # decode latents to synthesized masks
-        if math.prod(latent_shape[1:]) < math.prod(autoencoder_sliding_window_infer_size):
-            synthetic_mask = recon_model(latents).cpu().detach()
-        else:
-            synthetic_mask = (
-                sliding_window_inference(
-                    inputs=latents,
-                    roi_size=(
-                        autoencoder_sliding_window_infer_size[0],
-                        autoencoder_sliding_window_infer_size[1],
-                        autoencoder_sliding_window_infer_size[2],
-                    ),
-                    sw_batch_size=1,
-                    predictor=recon_model,
-                    mode="gaussian",
-                    overlap=autoencoder_sliding_window_infer_overlap,
-                    sw_device=device,
-                    device=torch.device("cpu"),
-                    progress=True,
-                )
-                .cpu()
-                .detach()
-            )
+        inferer = SlidingWindowInferer(
+            roi_size= autoencoder_sliding_window_infer_size,
+            sw_batch_size=1,
+            progress=True,
+            mode="gaussian",
+            overlap=autoencoder_sliding_window_infer_overlap,
+            device=torch.device("cpu"),
+            sw_device=device
+        )
+        synthetic_mask = dynamic_infer(inferer, recon_model, latents)
         synthetic_mask = torch.softmax(synthetic_mask, dim=1)
         synthetic_mask = torch.argmax(synthetic_mask, dim=1, keepdim=True)
         # mapping raw index to 132 labels
@@ -174,8 +179,7 @@ def ldm_conditional_sample_one_image(
     scale_factor,
     device,
     combine_label_or,
-    top_region_index_tensor,
-    bottom_region_index_tensor,
+    modality_tensor,
     spacing_tensor,
     latent_shape,
     output_size,
@@ -239,19 +243,18 @@ def ldm_conditional_sample_one_image(
         latents = initialize_noise_latents(latent_shape, device) * noise_factor
 
         # synthesize latents
-        noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps)
+        noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps, input_img_size = torch.prod(torch.tensor(latent_shape[-3:])) )
         for t in tqdm(noise_scheduler.timesteps, ncols=110):
             # Get controlnet output
             down_block_res_samples, mid_block_res_sample = controlnet(
-                x=latents, timesteps=torch.Tensor((t,)).to(device), controlnet_cond=controlnet_cond_vis
+                x=latents, timesteps=torch.Tensor((t,)).to(device), controlnet_cond=controlnet_cond_vis, class_labels = modality_tensor,
             )
             latent_model_input = latents
             noise_pred = diffusion_unet(
                 x=latent_model_input,
                 timesteps=torch.Tensor((t,)).to(device),
-                top_region_index_tensor=top_region_index_tensor,
-                bottom_region_index_tensor=bottom_region_index_tensor,
                 spacing_tensor=spacing_tensor,
+                class_labels = modality_tensor,
                 down_block_additional_residuals=down_block_res_samples,
                 mid_block_additional_residual=mid_block_res_sample,
             )
@@ -263,25 +266,17 @@ def ldm_conditional_sample_one_image(
 
         # decode latents to synthesized images
         logging.info("---- Start decoding latent features into images... ----")
+        inferer = SlidingWindowInferer(
+            roi_size= autoencoder_sliding_window_infer_size,
+            sw_batch_size=1,
+            progress=True,
+            mode="gaussian",
+            overlap=autoencoder_sliding_window_infer_overlap,
+            device=torch.device("cpu"),
+            sw_device=device
+        )
         start_time = time.time()
-        if math.prod(latent_shape[1:]) < math.prod(autoencoder_sliding_window_infer_size):
-            synthetic_images = recon_model(latents)
-        else:
-            synthetic_images = sliding_window_inference(
-                inputs=latents,
-                roi_size=(
-                    min(output_size[0] // 4 // 4 * 3, autoencoder_sliding_window_infer_size[0]),
-                    min(output_size[1] // 4 // 4 * 3, autoencoder_sliding_window_infer_size[1]),
-                    min(output_size[2] // 4 // 4 * 3, autoencoder_sliding_window_infer_size[2]),
-                ),
-                sw_batch_size=1,
-                predictor=recon_model,
-                mode="gaussian",
-                overlap=autoencoder_sliding_window_infer_overlap,
-                sw_device=device,
-                device=torch.device("cpu"),
-                progress=True,
-            )
+        synthetic_images = dynamic_infer(inferer, recon_model, latents)
         synthetic_images = torch.clip(synthetic_images, b_min, b_max).cpu()
         end_time = time.time()
         logging.info(f"---- Image decoding time: {end_time - start_time} seconds ----")
@@ -474,6 +469,7 @@ class LDMSampler:
         self,
         body_region,
         anatomy_list,
+        modality,
         all_mask_files_json,
         all_anatomy_size_condtions_json,
         all_mask_files_base_dir,
@@ -520,6 +516,7 @@ class LDMSampler:
         # intialize variables
         self.body_region = body_region
         self.anatomy_list = [label_dict[organ] for organ in anatomy_list]
+        self.modality_int = modality_mapping[modality]
         self.all_mask_files_json = all_mask_files_json
         self.data_root = all_mask_files_base_dir
         self.label_dict_remap_json = label_dict_remap_json
@@ -677,9 +674,10 @@ class LDMSampler:
             # generate image/label pairs
             to_generate = True
             try_time = 0
+            modality_tensor = torch.ones_like(spacing_tensor[:,0]).long()*self.modality_int
             while to_generate:
                 synthetic_images, synthetic_labels = self.sample_one_pair(
-                    combine_label_or, top_region_index_tensor, bottom_region_index_tensor, spacing_tensor
+                    combine_label_or, modality_tensor, spacing_tensor
                 )
                 # synthetic image quality check
                 pass_quality_check = self.quality_check(
@@ -741,7 +739,7 @@ class LDMSampler:
         return selected_mask_files
 
     def sample_one_pair(
-        self, combine_label_or_aug, top_region_index_tensor, bottom_region_index_tensor, spacing_tensor
+        self, combine_label_or_aug, modality_tensor, spacing_tensor
     ):
         """
         Generate a single pair of synthetic image and mask.
@@ -764,8 +762,7 @@ class LDMSampler:
             scale_factor=self.scale_factor,
             device=self.device,
             combine_label_or=combine_label_or_aug,
-            top_region_index_tensor=top_region_index_tensor,
-            bottom_region_index_tensor=bottom_region_index_tensor,
+            modality_tensor = modality_tensor,
             spacing_tensor=spacing_tensor,
             latent_shape=self.latent_shape,
             output_size=self.output_size,
