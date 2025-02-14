@@ -206,12 +206,6 @@ def find_masks(
         if not set(anatomy_list).issubset(_item["label_list"]):
             continue
 
-        # extract region indice (top_index and bottom_index) for candidate mask
-        top_index = [index for index, element in enumerate(_item["top_region_index"]) if element != 0]
-        top_index = top_index[0]
-        bottom_index = [index for index, element in enumerate(_item["bottom_region_index"]) if element != 0]
-        bottom_index = bottom_index[0]
-
         # whether to keep this mask, default to be True.
         keep_mask = True
 
