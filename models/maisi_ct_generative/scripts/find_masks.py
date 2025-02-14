@@ -154,6 +154,7 @@ def find_masks_original(
 
     return candidate_masks
 
+
 def find_masks(
     body_region: str | Sequence[str],
     anatomy_list: int | Sequence[int],
