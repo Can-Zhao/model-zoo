@@ -592,7 +592,7 @@ class LDMSampler:
         self.autoencoder_sliding_window_infer_overlap = autoencoder_sliding_window_infer_overlap
 
         # quality check args
-        self.max_try_time = 5  # if not pass quality check, will try self.max_try_time times
+        self.max_try_time = 3  # if not pass quality check, will try self.max_try_time times
         with open(real_img_median_statistics, "r") as json_file:
             self.median_statistics = json.load(json_file)
         self.label_int_dict = {
@@ -669,7 +669,6 @@ class LDMSampler:
                 need_resample = True
 
             selected_mask_files = self.select_mask(candidate_mask_files, num_img)
-            logging.info(f"Images will be generated based on {selected_mask_files}.")
             if len(selected_mask_files) != num_img:
                 raise ValueError(
                     (
@@ -680,6 +679,7 @@ class LDMSampler:
         for item in selected_mask_files:
             logging.info("---- Start preparing masks... ----")
             start_time = time.time()
+            logging.info(f"Image will be generated based on {item}.")
             if len(self.controllable_anatomy_size) > 0:
                 # generate a synthetic mask
                 (combine_label_or, top_region_index_tensor, bottom_region_index_tensor, spacing_tensor) = (
@@ -746,6 +746,10 @@ class LDMSampler:
                         "Generated image/label pair did not pass quality check, will re-generate another pair."
                     )
                     try_time += 1
+                if try_time > self.max_try_time:
+                    logging.info(
+                        "Generated image/label pair did not pass quality check. Please consider changing spacing and output_size to facilitate a more realistic setting."
+                    )
         return output_filenames
 
     def select_mask(self, candidate_mask_files, num_img):
