@@ -592,7 +592,7 @@ class LDMSampler:
         self.autoencoder_sliding_window_infer_overlap = autoencoder_sliding_window_infer_overlap
 
         # quality check args
-        self.max_try_time = 1  # if not pass quality check, will try self.max_try_time times
+        self.max_try_time = 5  # if not pass quality check, will try self.max_try_time times
         with open(real_img_median_statistics, "r") as json_file:
             self.median_statistics = json.load(json_file)
         self.label_int_dict = {
