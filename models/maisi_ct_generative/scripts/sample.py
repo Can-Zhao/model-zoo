@@ -748,7 +748,8 @@ class LDMSampler:
                     try_time += 1
                 if try_time > self.max_try_time:
                     logging.info(
-                        "Generated image/label pair did not pass quality check. Please consider changing spacing and output_size to facilitate a more realistic setting."
+                        "Generated image/label pair did not pass quality check. 
+                        Please consider changing spacing and output_size to facilitate a more realistic setting."
                     )
         return output_filenames
 
