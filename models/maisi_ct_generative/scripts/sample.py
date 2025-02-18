@@ -660,14 +660,18 @@ class LDMSampler:
                 need_resample = True
 
             selected_mask_files = self.select_mask(candidate_mask_files, num_img)
-            if len(selected_mask_files) != num_img:
+            if len(selected_mask_files) < num_img:
                 raise ValueError(
                     (
-                        f"len(selected_mask_files) ({len(selected_mask_files)}) != num_img ({num_img}). "
+                        f"len(selected_mask_files) ({len(selected_mask_files)}) < num_img ({num_img}). "
                         "This should not happen. Please revisit function select_mask(self, candidate_mask_files, num_img)."
                     )
                 )
-        for item in selected_mask_files:
+        num_generated_img = 0
+        for index_s in range(len(selected_mask_files)):
+            item = selected_mask_files[index_s]
+            if num_generated_img >= num_img:
+                break
             logging.info("---- Start preparing masks... ----")
             start_time = time.time()
             logging.info(f"Image will be generated based on {item}.")
@@ -695,53 +699,53 @@ class LDMSampler:
             to_generate = True
             try_time = 0
             modality_tensor = torch.ones_like(spacing_tensor[:, 0]).long() * self.modality_int
-            while to_generate:
-                synthetic_images, synthetic_labels = self.sample_one_pair(
-                    combine_label_or, modality_tensor, spacing_tensor
-                )
-                # synthetic image quality check
-                pass_quality_check = self.quality_check(
-                    synthetic_images.cpu().detach().numpy(), combine_label_or.cpu().detach().numpy()
-                )
-                if pass_quality_check or try_time > self.max_try_time:
-                    # save image/label pairs
-                    output_postfix = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                    synthetic_labels.meta["filename_or_obj"] = "sample.nii.gz"
-                    synthetic_images = MetaTensor(synthetic_images, meta=synthetic_labels.meta)
-                    img_saver = SaveImage(
-                        output_dir=self.output_dir,
-                        output_postfix=output_postfix + "_image",
-                        output_ext=self.image_output_ext,
-                        separate_folder=False,
-                    )
-                    img_saver(synthetic_images[0])
-                    synthetic_images_filename = os.path.join(
-                        self.output_dir, "sample_" + output_postfix + "_image" + self.image_output_ext
-                    )
-                    # filter out the organs that are not in anatomy_list
-                    synthetic_labels = filter_mask_with_organs(synthetic_labels, self.anatomy_list)
-                    label_saver = SaveImage(
-                        output_dir=self.output_dir,
-                        output_postfix=output_postfix + "_label",
-                        output_ext=self.label_output_ext,
-                        separate_folder=False,
-                    )
-                    label_saver(synthetic_labels[0])
-                    synthetic_labels_filename = os.path.join(
-                        self.output_dir, "sample_" + output_postfix + "_label" + self.label_output_ext
-                    )
-                    output_filenames.append([synthetic_images_filename, synthetic_labels_filename])
-                    to_generate = False
-                else:
+            # start generation
+            synthetic_images, synthetic_labels = self.sample_one_pair(
+                combine_label_or, modality_tensor, spacing_tensor
+            )
+            # synthetic image quality check
+            pass_quality_check = self.quality_check(
+                synthetic_images.cpu().detach().numpy(), combine_label_or.cpu().detach().numpy()
+            )
+            if pass_quality_check or (num_img - num_generated_img)>=(len(selected_mask_files)-index_s):
+                if not pass_quality_check:
                     logging.info(
-                        "Generated image/label pair did not pass quality check, will re-generate another pair."
-                    )
-                    try_time += 1
-                if try_time > self.max_try_time:
-                    logging.info(
-                        "Generated image/label pair did not pass quality check. "
-                        "Please consider changing spacing and output_size to facilitate a more realistic setting."
-                    )
+                    "Generated image/label pair did not pass quality check, but will still save them. "
+                    "Please consider changing spacing and output_size to facilitate a more realistic setting."
+                )
+                num_generated_img = num_generated_img +1
+                # save image/label pairs
+                output_postfix = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                synthetic_labels.meta["filename_or_obj"] = "sample.nii.gz"
+                synthetic_images = MetaTensor(synthetic_images, meta=synthetic_labels.meta)
+                img_saver = SaveImage(
+                    output_dir=self.output_dir,
+                    output_postfix=output_postfix + "_image",
+                    output_ext=self.image_output_ext,
+                    separate_folder=False,
+                )
+                img_saver(synthetic_images[0])
+                synthetic_images_filename = os.path.join(
+                    self.output_dir, "sample_" + output_postfix + "_image" + self.image_output_ext
+                )
+                # filter out the organs that are not in anatomy_list
+                # synthetic_labels = filter_mask_with_organs(synthetic_labels, self.anatomy_list)
+                label_saver = SaveImage(
+                    output_dir=self.output_dir,
+                    output_postfix=output_postfix + "_label",
+                    output_ext=self.label_output_ext,
+                    separate_folder=False,
+                )
+                label_saver(synthetic_labels[0])
+                synthetic_labels_filename = os.path.join(
+                    self.output_dir, "sample_" + output_postfix + "_label" + self.label_output_ext
+                )
+                output_filenames.append([synthetic_images_filename, synthetic_labels_filename])
+                to_generate = False
+            else:
+                logging.info(
+                    "Generated image/label pair did not pass quality check, will re-generate another pair."
+                )
         return output_filenames
 
     def select_mask(self, candidate_mask_files, num_img):
@@ -758,7 +762,7 @@ class LDMSampler:
         selected_mask_files = []
         random.shuffle(candidate_mask_files)
 
-        for n in range(num_img):
+        for n in range(num_img*self.max_try_time):
             mask_file = candidate_mask_files[n % len(candidate_mask_files)]
             selected_mask_files.append({"mask_file": mask_file, "if_aug": True})
         return selected_mask_files
@@ -999,7 +1003,7 @@ class LDMSampler:
                     # we cannot upsample the mask too much
                     include_c = False
                     break
-                # check diff in FOV
+                # check diff in FOV, major metric
                 diff += abs((abs(c["dim"][axis]*c["spacing"][axis]) - self.output_size[axis]*self.spacing[axis]) / 10)
                 # check diff in dim
                 diff += abs((abs(c["dim"][axis]) - self.output_size[axis]) / 100)
