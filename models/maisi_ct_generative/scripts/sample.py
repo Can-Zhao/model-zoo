@@ -202,8 +202,6 @@ def ldm_conditional_sample_one_image(
         scale_factor (float): Scaling factor for the latent space.
         device (torch.device): The device to run the computation on.
         combine_label_or (torch.Tensor): The combined label tensor.
-        top_region_index_tensor (torch.Tensor): Tensor specifying the top region index.
-        bottom_region_index_tensor (torch.Tensor): Tensor specifying the bottom region index.
         spacing_tensor (torch.Tensor): Tensor specifying the spacing.
         latent_shape (tuple): The shape of the latent space.
         output_size (tuple): The desired output size of the image.
@@ -625,11 +623,7 @@ class LDMSampler:
                 monai.transforms.EnsureChannelFirstd(keys=["pseudo_label"]),
                 monai.transforms.Orientationd(keys=["pseudo_label"], axcodes="RAS"),
                 monai.transforms.EnsureTyped(keys=["pseudo_label"], dtype=torch.uint8),
-                monai.transforms.Lambdad(keys="top_region_index", func=lambda x: torch.FloatTensor(x)),
-                monai.transforms.Lambdad(keys="bottom_region_index", func=lambda x: torch.FloatTensor(x)),
                 monai.transforms.Lambdad(keys="spacing", func=lambda x: torch.FloatTensor(x)),
-                monai.transforms.Lambdad(keys="top_region_index", func=lambda x: x * 1e2),
-                monai.transforms.Lambdad(keys="bottom_region_index", func=lambda x: x * 1e2),
                 monai.transforms.Lambdad(keys="spacing", func=lambda x: x * 1e2),
             ]
         )
@@ -682,14 +676,14 @@ class LDMSampler:
             logging.info(f"Image will be generated based on {item}.")
             if len(self.controllable_anatomy_size) > 0:
                 # generate a synthetic mask
-                (combine_label_or, top_region_index_tensor, bottom_region_index_tensor, spacing_tensor) = (
+                (combine_label_or, spacing_tensor) = (
                     self.prepare_one_mask_and_meta_info(anatomy_size_condtion)
                 )
             else:
                 # read in mask file
                 mask_file = item["mask_file"]
                 if_aug = item["if_aug"]
-                (combine_label_or, top_region_index_tensor, bottom_region_index_tensor, spacing_tensor) = (
+                (combine_label_or, spacing_tensor) = (
                     self.read_mask_information(mask_file)
                 )
                 if need_resample:
@@ -778,8 +772,7 @@ class LDMSampler:
 
         Args:
             combine_label_or_aug (torch.Tensor): Combined label tensor or augmented label.
-            top_region_index_tensor (torch.Tensor): Tensor specifying the top region index.
-            bottom_region_index_tensor (torch.Tensor): Tensor specifying the bottom region index.
+            modality_tensor (torch.Tensor): Tensor specifying the image modality.
             spacing_tensor (torch.Tensor): Tensor specifying the spacing.
 
         Returns:
@@ -875,13 +868,9 @@ class LDMSampler:
         combine_label_or = MetaTensor(combine_label_or, affine=affine)
         combine_label_or = self.ensure_output_size_and_spacing(combine_label_or)
 
-        top_region_index, bottom_region_index = get_body_region_index_from_mask(combine_label_or)
-
         spacing_tensor = torch.FloatTensor(self.spacing).unsqueeze(0).half().to(self.device) * 1e2
-        top_region_index_tensor = torch.FloatTensor(top_region_index).unsqueeze(0).half().to(self.device) * 1e2
-        bottom_region_index_tensor = torch.FloatTensor(bottom_region_index).unsqueeze(0).half().to(self.device) * 1e2
 
-        return combine_label_or, top_region_index_tensor, bottom_region_index_tensor, spacing_tensor
+        return combine_label_or, spacing_tensor
 
     def sample_one_mask(self, anatomy_size):
         """
@@ -969,13 +958,11 @@ class LDMSampler:
         """
         val_data = self.val_transforms(mask_file)
 
-        for key in ["pseudo_label", "spacing", "top_region_index", "bottom_region_index"]:
+        for key in ["pseudo_label", "spacing", ]:
             val_data[key] = val_data[key].unsqueeze(0).to(self.device)
 
         return (
             val_data["pseudo_label"],
-            val_data["top_region_index"],
-            val_data["bottom_region_index"],
             val_data["spacing"],
         )
 
@@ -1030,9 +1017,6 @@ class LDMSampler:
                 else:
                     raise e
             # get region_index after resample
-            top_region_index, bottom_region_index = get_body_region_index_from_mask(label)
-            c["top_region_index"] = top_region_index
-            c["bottom_region_index"] = bottom_region_index
             c["spacing"] = self.spacing
             c["dim"] = self.output_size
 
