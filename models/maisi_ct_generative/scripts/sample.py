@@ -31,7 +31,6 @@ from .utils import (
     binarize_labels,
     dynamic_infer,
     general_mask_generation_post_process,
-    get_body_region_index_from_mask,
     remap_labels,
 )
 
@@ -459,8 +458,7 @@ def check_input(body_region, anatomy_list, label_dict_json, output_size, spacing
     else:
         logging.info(
             (
-                "`controllable_anatomy_size` is empty.\nWe will synthesize based on `body_region`: "
-                f"({body_region}) and `anatomy_list`: ({anatomy_list})."
+                f"`controllable_anatomy_size` is empty.\nWe will synthesize based on `anatomy_list`: ({anatomy_list})."
             )
         )
         # check body_region format
@@ -980,7 +978,6 @@ class LDMSampler:
         """
         # first check the database based on anatomy list
         candidates = find_masks(
-            self.body_region,
             self.anatomy_list,
             self.spacing,
             self.output_size,
@@ -991,19 +988,30 @@ class LDMSampler:
 
         if len(candidates) < num_img:
             raise ValueError(f"candidate masks are less than {num_img}).")
+        
         # loop through the database and find closest combinations
         new_candidates = []
         for c in candidates:
             diff = 0
+            include_c = True
             for axis in range(3):
+                if abs(c["dim"][axis]) < self.output_size[axis]-64:
+                    # we cannot upsample the mask too much
+                    include_c = False
+                    break
+                # check diff in FOV
+                diff += abs((abs(c["dim"][axis]*c["spacing"][axis]) - self.output_size[axis]*self.spacing[axis]) / 10)
                 # check diff in dim
-                diff += abs((c["dim"][axis] - self.output_size[axis]) / 100)
+                diff += abs((abs(c["dim"][axis]) - self.output_size[axis]) / 100)
                 # check diff in spacing
-                diff += abs(c["spacing"][axis] - self.spacing[axis])
-            new_candidates.append((c, diff))
+                diff += abs(abs(c["spacing"][axis]) - self.spacing[axis])
+            if include_c:
+                new_candidates.append((c, diff))
+        
         # choose top-2*num_img candidates (at least 5)
         new_candidates = sorted(new_candidates, key=lambda x: x[1])[: max(2 * num_img, 5)]
         final_candidates = []
+        
         # check top-2*num_img candidates and update spacing after resampling
         image_loader = monai.transforms.LoadImage(image_only=True, ensure_channel_first=True)
         for c, _ in new_candidates:
