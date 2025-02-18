@@ -992,7 +992,7 @@ class LDMSampler:
 
         if len(candidates) < num_img:
             raise ValueError(f"candidate masks are less than {num_img}).")
-        
+
         # loop through the database and find closest combinations
         new_candidates = []
         for c in candidates:
@@ -1011,11 +1011,11 @@ class LDMSampler:
                 diff += abs(abs(c["spacing"][axis]) - self.spacing[axis])
             if include_c:
                 new_candidates.append((c, diff))
-        
+
         # choose top-2*num_img candidates (at least 5)
         new_candidates = sorted(new_candidates, key=lambda x: x[1])[: max(2 * num_img, 5)]
         final_candidates = []
-        
+
         # check top-2*num_img candidates and update spacing after resampling
         image_loader = monai.transforms.LoadImage(image_only=True, ensure_channel_first=True)
         for c, _ in new_candidates:
