@@ -647,7 +647,6 @@ class LDMSampler:
             need_resample = False
             # find candidate mask and save to candidate_mask_files
             candidate_mask_files = find_masks(
-                self.body_region,
                 self.anatomy_list,
                 self.spacing,
                 self.output_size,

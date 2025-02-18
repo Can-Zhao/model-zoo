@@ -53,7 +53,6 @@ def convert_body_region(body_region: str | Sequence[str]) -> Sequence[int]:
 
 
 def find_masks(
-    body_region: str | Sequence[str],
     anatomy_list: int | Sequence[int],
     spacing: Sequence[float] | float = 1.0,
     output_size: Sequence[int] = (512, 512, 512),
