@@ -729,7 +729,7 @@ class LDMSampler:
                     self.output_dir, "sample_" + output_postfix + "_image" + self.image_output_ext
                 )
                 # filter out the organs that are not in anatomy_list
-                # synthetic_labels = filter_mask_with_organs(synthetic_labels, self.anatomy_list)
+                synthetic_labels = filter_mask_with_organs(synthetic_labels, self.anatomy_list)
                 label_saver = SaveImage(
                     output_dir=self.output_dir,
                     output_postfix=output_postfix + "_label",
